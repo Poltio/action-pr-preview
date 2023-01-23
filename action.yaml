@@ -47,6 +47,7 @@ runs:
 
     - name: Setup Image Tag
       run: echo "docker_tag=preview_${{ env.BRANCH_URL }}_${{ env.SHORT_SHA }}" >> $GITHUB_ENV
+      shell: bash
 
     - name: Setup Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -62,13 +63,16 @@ runs:
         project_id: ${{ inputs.GOOGLE_CLOUD_PROJECT_ID }}
 
     - name: Setup Docker Auth
+      shell: bash
       run: |-
         gcloud --quiet auth configure-docker ${{ inputs.ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev
 
     - name: Setup AR image tag url
+      shell: bash
       run: echo "ar_image_tag=${{ inputs.ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev/${{ inputs.GOOGLE_CLOUD_PROJECT_ID }}/${{ inputs.ARTIFACT_REGISTRY_REPO }}/${{ inputs.ARTIFACT_REGISTRY_IMAGE }}:${{ env.docker_tag }}" >> $GITHUB_ENV
 
     - name: Building the Docker Image
+      shell: bash
       run: |-
         docker build \
           --tag "${{ env.ar_image_tag }}" \
@@ -77,6 +81,7 @@ runs:
           .
 
     - name: Push the Image to Google Artifact Registry
+      shell: bash
       run: |-
         docker push ${{ env.ar_image_tag }}
 
