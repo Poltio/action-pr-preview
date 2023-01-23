@@ -1,0 +1,139 @@
+name: Pull Request Preview
+description: "Creates unique preview environments for Pull Requests on Google Cloud Run"
+
+inputs:
+  GOOGLE_CLOUD_PROJECT_ID:
+    description: "Google Cloud Project ID you want to use."
+    required: true
+  GOOGLE_CLOUD_SERVICE_ACCOUNT_KEY:
+    description: "Google Cloud Service Account KEY"
+    required: true
+  CLOUD_RUN_SERVICE_NAME:
+    description: "Google Cloud Run Service name you want to deploy"
+    required: true
+  CLOUD_RUN_REGION:
+    description: "The region you want your service to run"
+    required: true
+  ARTIFACT_REGISTRY_REGION:
+    description: "Google Artifact Registry region you want to use"
+    required: true
+  ARTIFACT_REGISTRY_REPO:
+    description: "Google artifact Registry repository you want to store your build image in"
+    required: true
+  ARTIFACT_REGISTRY_IMAGE:
+    description: "Google Artifact Registry image"
+    required: true
+
+outputs:
+  PREVIEW_URL:
+    description: "The url for the preview environment."
+    value: ${{ steps.deploy.outputs.url }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+
+    - name: Add SHORT_SHA env property with commit short sha
+      run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
+
+    - name: Get url friendly branch name
+      shell: bash
+      run: |
+        url=$(sed -E 's#refs/[^\/]*/##;s/[^a-zA-Z0-9_]+/-/g;s/-+/-/g;s/^-*//;s/-*$//' <<<"${GITHUB_HEAD_REF}")
+        tolower=${url,,}
+        reduce=$(echo $tolower | cut -c -30)
+        echo "BRANCH_URL=$(echo ${reduce%-})" >> $GITHUB_ENV
+
+    - name: Setup Image Tag
+      run: echo "docker_tag=preview_${{ env.BRANCH_URL }}_${{ env.SHORT_SHA }}" >> $GITHUB_ENV
+
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Auth Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: "${{ inputs.GOOGLE_CLOUD_SERVICE_ACCOUNT_KEY }}"
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ inputs.GOOGLE_CLOUD_PROJECT_ID }}
+
+    - name: Setup Docker Auth
+      run: |-
+        gcloud --quiet auth configure-docker ${{ inputs.ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev
+
+    - name: Setup AR image tag url
+      run: echo "ar_image_tag=${{ inputs.ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev/${{ inputs.GOOGLE_CLOUD_PROJECT_ID }}/${{ inputs.ARTIFACT_REGISTRY_REPO }}/${{ inputs.ARTIFACT_REGISTRY_IMAGE }}:${{ env.docker_tag }}" >> $GITHUB_ENV
+
+    - name: Building the Docker Image
+      run: |-
+        docker build \
+          --tag "${{ env.ar_image_tag }}" \
+          --build-arg sha="$GITHUB_SHA" \
+          --build-arg version="${{ env.docker_tag }}" \
+          .
+
+    - name: Push the Image to Google Artifact Registry
+      run: |-
+        docker push ${{ env.ar_image_tag }}
+
+    - id: "deploy"
+      uses: "google-github-actions/deploy-cloudrun@v1"
+      with:
+        service: ${{ inputs.CLOUD_RUN_SERVICE_NAME }}
+        image: ${{ env.ar_image_tag }}
+        tag: ${{ env.BRANCH_URL }}
+        region: ${{ inputs.CLOUD_RUN_REGION }}
+
+    - name: Comment the Link on Pull Request
+      uses: actions/github-script@v6
+      with:
+        script: |
+          // Get the existing comments.
+          const {data: comments} = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.number,
+          })
+          // Find any comment already made by the bot.
+          const botComment = comments.find(comment => comment.user.id === 41898282)
+          const commentBody = `✅ Changes in this PR is deployed. To view the working copy please visit the following link: \n\n\n🔗 ${{ steps.deploy.outputs.url }}`;
+          if (botComment) {
+            // If the comment exists, update it.
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: commentBody
+            })
+          } else {
+            // First time commenting.
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.number,
+              body: commentBody
+            })
+          }
+
+          // Create new deployment to post the preview link on PR.
+          const deployment = await github.rest.repos.createDeployment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: context.payload.pull_request.head.sha,
+            environment: 'stage',
+            description: commentBody,
+            required_contexts: []
+          });
+
+          // Setup environment_url so we can see the preview url on bottom of PR page
+          await github.rest.repos.createDeploymentStatus({
+            state: 'success',
+            environment_url: `${{ steps.deploy.outputs.url }}`,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            deployment_id: deployment.data.id
+          });
