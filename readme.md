@@ -55,3 +55,10 @@ jobs:
           ARTIFACT_REGISTRY_REPO: ${{ env.GAR_REPO }}
           ARTIFACT_REGISTRY_IMAGE: ${{ env.GAR_IMAGE }}
 ```
+
+### TODO: 
+
+- [ ] Better description in the readme with links to related google cloud actions and how to enable the services/apis and generate the auth key 
+- [ ] More visuals in the readme with example PR screen shots 
+
+
