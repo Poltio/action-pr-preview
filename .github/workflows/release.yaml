@@ -1,0 +1,21 @@
+name: Create new version
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    name: Create a new release
+
+    if: github.event.pull_request.merged
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - id: release
+        uses: poltio/action-release@main
+        with:
+          token: ${{ secrets.GH_TOKEN }}
