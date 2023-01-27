@@ -21,13 +21,11 @@ inputs:
   CLOUD_RUN_SECRETS:
     description: "Cloud Run secrets to mount or use env vars "
     required: false
-    default: |
-      # Env Secrets
+    default: ""
   CLOUD_RUN_ENV_VARS:
     description: "Cloud Run env vars "
     required: false
-    default: |
-      # Env vars
+    default: ""
   ARTIFACT_REGISTRY_REGION:
     description: "Google Artifact Registry region you want to use"
     required: true
