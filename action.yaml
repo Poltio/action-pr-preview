@@ -11,7 +11,7 @@ inputs:
   DOCKER_BUILD_ARGS:
     description: If you want to inject build params to docker build step.
     required: false
-    default: ""
+    default: |-
   CLOUD_RUN_SERVICE_NAME:
     description: "Google Cloud Run Service name you want to deploy"
     required: true
