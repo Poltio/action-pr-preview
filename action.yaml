@@ -8,12 +8,26 @@ inputs:
   GOOGLE_CLOUD_SERVICE_ACCOUNT_KEY:
     description: "Google Cloud Service Account KEY"
     required: true
+  DOCKER_BUILD_ARGS:
+    description: If you want to inject build params to docker build step.
+    required: false
+    default: ""
   CLOUD_RUN_SERVICE_NAME:
     description: "Google Cloud Run Service name you want to deploy"
     required: true
   CLOUD_RUN_REGION:
     description: "The region you want your service to run"
     required: true
+  CLOUD_RUN_SECRETS:
+    description: "Cloud Run secrets to mount or use env vars "
+    required: false
+    default: |
+      # Env Secrets
+  CLOUD_RUN_ENV_VARS:
+    description: "Cloud Run env vars "
+    required: false
+    default: |
+      # Env vars
   ARTIFACT_REGISTRY_REGION:
     description: "Google Artifact Registry region you want to use"
     required: true
@@ -79,6 +93,7 @@ runs:
           --tag "${{ env.ar_image_tag }}" \
           --build-arg sha="$GITHUB_SHA" \
           --build-arg version="${{ env.docker_tag }}" \
+          ${{ inputs.DOCKER_BUILD_ARGS }}
           .
 
     - name: Push the Image to Google Artifact Registry
@@ -93,6 +108,8 @@ runs:
         image: ${{ env.ar_image_tag }}
         tag: ${{ env.BRANCH_URL }}
         region: ${{ inputs.CLOUD_RUN_REGION }}
+        env_vars: ${{ inputs.CLOUD_RUN_ENV_VARS }}
+        secrets: ${{ inputs.CLOUD_RUN_SECRETS }}
 
     - name: Comment the Link on Pull Request
       uses: actions/github-script@v6
