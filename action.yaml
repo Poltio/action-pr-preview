@@ -10,9 +10,7 @@ inputs:
     required: true
   DOCKER_BUILD_ARGS:
     description: If you want to inject build params to docker build step.
-    required: false
-    default: >-
-      --build-arg sha="$GITHUB_SHA"
+    required: true
   CLOUD_RUN_SERVICE_NAME:
     description: "Google Cloud Run Service name you want to deploy"
     required: true
@@ -88,11 +86,7 @@ runs:
     - name: Building the Docker Image
       shell: bash
       run: |-
-        docker build \
-          --tag "${{ env.ar_image_tag }}" \
-          ${{ inputs.DOCKER_BUILD_ARGS }} \
-          --build-arg version="${{ env.docker_tag }}" \ 
-          .
+        docker build --tag "${{ env.ar_image_tag }}" --build-arg version="${{ env.docker_tag }}" ${{ inputs.DOCKER_BUILD_ARGS }} .
 
     - name: Push the Image to Google Artifact Registry
       shell: bash
