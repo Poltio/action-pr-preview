@@ -54,7 +54,7 @@ runs:
       run: |
         url=$(sed -E 's#refs/[^\/]*/##;s/[^a-zA-Z0-9_]+/-/g;s/-+/-/g;s/^-*//;s/-*$//' <<<"${GITHUB_HEAD_REF}")
         tolower=${url,,}
-        reduce=$(echo $tolower | cut -c -30)
+        reduce=$(echo $tolower | cut -c -20)
         echo "BRANCH_URL=$(echo ${reduce%-})" >> $GITHUB_ENV
 
     - name: Setup Image Tag
