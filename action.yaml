@@ -105,6 +105,7 @@ runs:
 
     - name: Comment the Link on Pull Request
       uses: actions/github-script@v6
+      continue-on-error: true
       with:
         script: |
           // Get the existing comments.
