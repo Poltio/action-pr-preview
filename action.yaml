@@ -150,5 +150,6 @@ runs:
             environment_url: `${{ steps.deploy.outputs.url }}`,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            deployment_id: deployment.data.id
+            deployment_id: deployment.data.id,
+            auto_merge: false
           });
