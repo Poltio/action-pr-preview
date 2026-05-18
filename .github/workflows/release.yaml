@@ -1,21 +1,24 @@
 name: Create new version
 on:
   pull_request:
-    types: [closed]
-
+    types:
+      - closed
+    branches:
+      - main
+permissions: {}
 jobs:
   release:
     runs-on: ubuntu-latest
     name: Create a new release
-
+    permissions:
+      contents: read
     if: github.event.pull_request.merged
-
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           fetch-depth: 0
-
+          persist-credentials: false
       - id: release
-        uses: poltio/action-release@main
+        uses: poltio/action-release@d70888b07c6292712bfd5f9a51098bfbac6f6886 # v0.0.17
         with:
           token: ${{ secrets.GH_TOKEN }}
