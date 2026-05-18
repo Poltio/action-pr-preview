@@ -1,100 +1,112 @@
 name: Pull Request Preview
-description: "Creates unique preview environments for Pull Requests on Google Cloud Run"
-
+description: Creates unique preview environments for Pull Requests on Google Cloud Run
 inputs:
   GOOGLE_CLOUD_PROJECT_ID:
-    description: "Google Cloud Project ID you want to use."
+    description: Google Cloud Project ID you want to use.
     required: true
   GOOGLE_CLOUD_SERVICE_ACCOUNT_KEY:
-    description: "Google Cloud Service Account KEY"
+    description: Google Cloud Service Account KEY
     required: true
   DOCKER_BUILD_ARGS:
     description: If you want to inject build params to docker build step.
     required: true
   CLOUD_RUN_SERVICE_NAME:
-    description: "Google Cloud Run Service name you want to deploy"
+    description: Google Cloud Run Service name you want to deploy
     required: true
   CLOUD_RUN_REGION:
-    description: "The region you want your service to run"
+    description: The region you want your service to run
     required: true
   CLOUD_RUN_SECRETS:
-    description: "Cloud Run secrets to mount or use env vars "
+    description: 'Cloud Run secrets to mount or use env vars '
     required: false
     default: ""
   CLOUD_RUN_ENV_VARS:
-    description: "Cloud Run env vars "
+    description: 'Cloud Run env vars '
     required: false
     default: ""
   ARTIFACT_REGISTRY_REGION:
-    description: "Google Artifact Registry region you want to use"
+    description: Google Artifact Registry region you want to use
     required: true
   ARTIFACT_REGISTRY_REPO:
-    description: "Google artifact Registry repository you want to store your build image in"
+    description: Google artifact Registry repository you want to store your build image in
     required: true
   ARTIFACT_REGISTRY_IMAGE:
-    description: "Google Artifact Registry image"
+    description: Google Artifact Registry image
     required: true
-
 outputs:
   PREVIEW_URL:
-    description: "The url for the preview environment."
+    description: The url for the preview environment.
     value: ${{ steps.deploy.outputs.url }}
-
 runs:
-  using: "composite"
+  using: composite
   steps:
-    - uses: actions/checkout@v3
-
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
     - name: Add SHORT_SHA env property with commit short sha
       shell: bash
-      run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
-
+      run: | # zizmor: ignore[github-env]
+        short_sha=$(echo ${GITHUB_SHA} | cut -c1-8)
+        delimiter="$(openssl rand -hex 8)"
+        echo "SHORT_SHA<<$delimiter" >> "$GITHUB_ENV"
+        echo "$short_sha" >> "$GITHUB_ENV"
+        echo "$delimiter" >> "$GITHUB_ENV"
     - name: Get url friendly branch name
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env]
         url=$(sed -E 's#refs/[^\/]*/##;s/[^a-zA-Z0-9]+/-/g;s/-+/-/g;s/^-*//;s/-*$//' <<<"${GITHUB_HEAD_REF}")
         tolower=${url,,}
         reduce=$(echo $tolower | cut -c -20)
-        echo "BRANCH_URL=$(echo ${reduce%-})" >> $GITHUB_ENV
-
+        branch_url=$(echo ${reduce%-})
+        delimiter="$(openssl rand -hex 8)"
+        echo "BRANCH_URL<<$delimiter" >> "$GITHUB_ENV"
+        echo "$branch_url" >> "$GITHUB_ENV"
+        echo "$delimiter" >> "$GITHUB_ENV"
     - name: Setup Image Tag
-      run: echo "docker_tag=preview_${{ env.BRANCH_URL }}_${{ env.SHORT_SHA }}" >> $GITHUB_ENV
       shell: bash
-
+      # BRANCH_URL and SHORT_SHA are native bash variables here because they were written to $GITHUB_ENV
+      run: | # zizmor: ignore[github-env]
+        delimiter="$(openssl rand -hex 8)"
+        echo "docker_tag<<$delimiter" >> "$GITHUB_ENV"
+        echo "preview_${BRANCH_URL}_${SHORT_SHA}" >> "$GITHUB_ENV"
+        echo "$delimiter" >> "$GITHUB_ENV"
     - name: Setup Docker Buildx
-      uses: docker/setup-buildx-action@v2
-
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
     - name: Auth Google Cloud
-      uses: google-github-actions/auth@v1
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
       with:
-        credentials_json: "${{ inputs.GOOGLE_CLOUD_SERVICE_ACCOUNT_KEY }}"
-
+        credentials_json: ${{ inputs.GOOGLE_CLOUD_SERVICE_ACCOUNT_KEY }}
     - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
       with:
         project_id: ${{ inputs.GOOGLE_CLOUD_PROJECT_ID }}
-
     - name: Setup Docker Auth
       shell: bash
-      run: |-
-        gcloud --quiet auth configure-docker ${{ inputs.ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev
-
+      env:
+        REGION: ${{ inputs.ARTIFACT_REGISTRY_REGION }}
+      run: gcloud --quiet auth configure-docker "${REGION}-docker.pkg.dev"
     - name: Setup AR image tag url
       shell: bash
-      run: echo "ar_image_tag=${{ inputs.ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev/${{ inputs.GOOGLE_CLOUD_PROJECT_ID }}/${{ inputs.ARTIFACT_REGISTRY_REPO }}/${{ inputs.ARTIFACT_REGISTRY_IMAGE }}:${{ env.docker_tag }}" >> $GITHUB_ENV
-
+      env:
+        REGION: ${{ inputs.ARTIFACT_REGISTRY_REGION }}
+        PROJECT: ${{ inputs.GOOGLE_CLOUD_PROJECT_ID }}
+        REPO: ${{ inputs.ARTIFACT_REGISTRY_REPO }}
+        IMAGE: ${{ inputs.ARTIFACT_REGISTRY_IMAGE }}
+      run: | # zizmor: ignore[github-env]
+        delimiter="$(openssl rand -hex 8)"
+        echo "ar_image_tag<<$delimiter" >> "$GITHUB_ENV"
+        echo "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/${IMAGE}:${docker_tag}" >> "$GITHUB_ENV"
+        echo "$delimiter" >> "$GITHUB_ENV"
     - name: Building the Docker Image
       shell: bash
-      run: |-
-        docker build --tag "${{ env.ar_image_tag }}" --build-arg version="${{ env.docker_tag }}" ${{ inputs.DOCKER_BUILD_ARGS }} .
-
+      env:
+        BUILD_ARGS: ${{ inputs.DOCKER_BUILD_ARGS }}
+      run: docker build --tag "$ar_image_tag" --build-arg version="$docker_tag" $BUILD_ARGS .
     - name: Push the Image to Google Artifact Registry
       shell: bash
-      run: |-
-        docker push ${{ env.ar_image_tag }}
-
-    - id: "deploy"
-      uses: "google-github-actions/deploy-cloudrun@v1"
+      run: docker push "$ar_image_tag"
+    - id: deploy
+      uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
       with:
         service: ${{ inputs.CLOUD_RUN_SERVICE_NAME }}
         image: ${{ env.ar_image_tag }}
@@ -102,55 +114,13 @@ runs:
         region: ${{ inputs.CLOUD_RUN_REGION }}
         env_vars: ${{ inputs.CLOUD_RUN_ENV_VARS }}
         secrets: ${{ inputs.CLOUD_RUN_SECRETS }}
-
     - name: Comment the Link on Pull Request
-      uses: actions/github-script@v6
+      uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6.4.1
       continue-on-error: true
+      env:
+        DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        ACTION_PATH: ${{ github.action_path }}
       with:
         script: |
-          // Get the existing comments.
-          const {data: comments} = await github.rest.issues.listComments({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.payload.number,
-          })
-          // Find any comment already made by the bot.
-          const botComment = comments.find(comment => comment.user.id === 41898282)
-          const commentBody = `✅ Changes in this PR is deployed. To view the working copy please visit the following link: \n\n\n🔗 ${{ steps.deploy.outputs.url }}`;
-          if (botComment) {
-            // If the comment exists, update it.
-            await github.rest.issues.updateComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: botComment.id,
-              body: commentBody
-            })
-          } else {
-            // First time commenting.
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.number,
-              body: commentBody
-            })
-          }
-
-          // Create new deployment to post the preview link on PR.
-          const deployment = await github.rest.repos.createDeployment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            ref: context.payload.pull_request.head.sha,
-            environment: 'stage',
-            description: commentBody,
-            required_contexts: []
-          });
-
-          // Setup environment_url so we can see the preview url on bottom of PR page
-          await github.rest.repos.createDeploymentStatus({
-            state: 'success',
-            environment_url: `${{ steps.deploy.outputs.url }}`,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            deployment_id: deployment.data.id,
-            auto_merge: false
-          });
+          const script = require(`${process.env.ACTION_PATH}/comment-pr.js`);
+          await script({github, context});
