@@ -19,6 +19,18 @@ the following params are required.
 - ARTIFACT_REGISTRY_REPO: google artifact registry repo
 - ARTIFACT_REGISTRY_IMAGE: google artifact registry image name
 
+optional:
+
+- DOCKER_BUILD_ARGS: extra flags appended to `docker buildx build` (e.g. `--build-arg env=stage`).
+  split on whitespace, so values cannot contain spaces.
+
+### notes
+
+- the calling workflow **must** run `actions/checkout` itself; this action no longer
+  checks out, so anything you build in earlier steps survives into the build context.
+- build layers are cached in artifact registry under the `:buildcache` tag of your image,
+  shared across every pull request in the repo.
+
 ### example
 
 ```yaml

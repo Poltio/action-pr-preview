@@ -9,7 +9,8 @@ inputs:
     required: true
   DOCKER_BUILD_ARGS:
     description: If you want to inject build params to docker build step.
-    required: true
+    required: false
+    default: ""
   CLOUD_RUN_SERVICE_NAME:
     description: Google Cloud Run Service name you want to deploy
     required: true
@@ -40,9 +41,6 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      with:
-        persist-credentials: false
     - name: Add SHORT_SHA env property with commit short sha
       shell: bash
       run: | # zizmor: ignore[github-env]
@@ -97,14 +95,24 @@ runs:
         echo "ar_image_tag<<$delimiter" >> "$GITHUB_ENV"
         echo "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/${IMAGE}:${docker_tag}" >> "$GITHUB_ENV"
         echo "$delimiter" >> "$GITHUB_ENV"
-    - name: Building the Docker Image
+    - name: Build and push the Docker Image
       shell: bash
       env:
         BUILD_ARGS: ${{ inputs.DOCKER_BUILD_ARGS }}
-      run: docker build --tag "$ar_image_tag" --build-arg version="$docker_tag" $BUILD_ARGS .
-    - name: Push the Image to Google Artifact Registry
-      shell: bash
-      run: docker push "$ar_image_tag"
+      run: |
+        # layer cache lives next to the image, shared by every PR in the repo
+        cache="${ar_image_tag%:*}:buildcache"
+        # --provenance=false keeps the pushed artifact a plain manifest, as it was
+        # before buildx; attestations would make it an index and surprise consumers.
+        # $BUILD_ARGS is deliberately unquoted so callers can pass multiple flags.
+        docker buildx build \
+          --tag "$ar_image_tag" \
+          --build-arg version="$docker_tag" \
+          --cache-from "type=registry,ref=$cache" \
+          --cache-to "type=registry,ref=$cache,mode=max,image-manifest=true,oci-mediatypes=true" \
+          --provenance=false \
+          --push \
+          $BUILD_ARGS .
     - id: deploy
       uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
       with:
