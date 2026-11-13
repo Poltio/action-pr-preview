@@ -7,12 +7,24 @@ With this action you can deploy your Pull Requests as a unique preview environme
 - google artifact registry (to store the docker containers)
 - google cloud run (to run the containers in unique urls as serverless apps )
 
+### authentication
+
+Since v1 the action authenticates with Workload Identity Federation (no keys);
+v0.x releases take a JSON key instead. The service account needs
+`roles/artifactregistry.writer` on the registry repository (plus reader on any
+repository your Dockerfile pulls base images from), `roles/run.developer` on the
+Cloud Run service, `roles/iam.serviceAccountUser` on the service's runtime
+service account, and `roles/iam.workloadIdentityUser` granted to your repository
+through your Workload Identity Provider. The calling job needs
+`id-token: write`.
+
 ### params
 
 the following params are required.
 
 - GOOGLE_CLOUD_PROJECT_ID: project id in the google cloud
-- GOOGLE_CLOUD_SERVICE_ACCOUNT_KEY: google cloud service account key in json format.
+- WORKLOAD_IDENTITY_PROVIDER: full resource name of the workload identity provider
+- SERVICE_ACCOUNT: email of the service account to deploy as
 - CLOUD_RUN_SERVICE_NAME: google cloud run service name
 - CLOUD_RUN_REGION: google cloud run region for the service
 - ARTIFACT_REGISTRY_REGION: google artifact registry region
@@ -41,8 +53,10 @@ on:
     branches:
       - main
 
+permissions: {}
+
 env:
-  PROJECT_ID: ${{ secrets.GC_PROJECT_ID }}
+  PROJECT_ID: <project-id>
   SERVICE: my-super-awesome-serivce
   REGION: europe-west1
   GAR_LOCATION: europe-west1
@@ -53,14 +67,18 @@ jobs:
   preview:
     name: Building and Deploying the Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation login to GCP
+      pull-requests: write # comment the preview link
 
     steps:
-      - uses: actions/checkout@v3
       - id: preview
-        uses: poltio/action-pr-preview@main
+        uses: poltio/action-pr-preview@<sha> # v1.0.0
         with:
           GOOGLE_CLOUD_PROJECT_ID: ${{ env.PROJECT_ID }}
-          GOOGLE_CLOUD_SERVICE_ACCOUNT_KEY: ${{ secrets.GKE_SA_KEY }}
+          WORKLOAD_IDENTITY_PROVIDER: projects/<project-number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
+          SERVICE_ACCOUNT: <deployer>@<project-id>.iam.gserviceaccount.com
           CLOUD_RUN_SERVICE_NAME: ${{ env.SERVICE }}
           CLOUD_RUN_REGION: ${{ env.REGION }}
           ARTIFACT_REGISTRY_REGION: ${{ env.GAR_LOCATION }}
