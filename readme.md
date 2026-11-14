@@ -73,6 +73,9 @@ jobs:
       pull-requests: write # comment the preview link
 
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - id: preview
         uses: poltio/action-pr-preview@<sha> # v1.0.0
         with:
