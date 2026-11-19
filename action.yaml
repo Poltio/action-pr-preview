@@ -71,8 +71,6 @@ runs:
         echo "docker_tag<<$delimiter" >> "$GITHUB_ENV"
         echo "preview_${BRANCH_URL}_${SHORT_SHA}" >> "$GITHUB_ENV"
         echo "$delimiter" >> "$GITHUB_ENV"
-    - name: Setup Docker Buildx
-      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
     - name: Auth Google Cloud
       uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
       with:
@@ -100,24 +98,36 @@ runs:
         echo "ar_image_tag<<$delimiter" >> "$GITHUB_ENV"
         echo "${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/${IMAGE}:${docker_tag}" >> "$GITHUB_ENV"
         echo "$delimiter" >> "$GITHUB_ENV"
-    - name: Build and push the Docker Image
+    - name: Build the Docker Image
       shell: bash
       env:
         BUILD_ARGS: ${{ inputs.DOCKER_BUILD_ARGS }}
+        # Cloud Run runs amd64 and the self-hosted runner is arm64; a --platform in BUILD_ARGS still wins
+        DOCKER_DEFAULT_PLATFORM: linux/amd64
       run: |
-        # layer cache lives next to the image, shared by every PR in the repo
-        cache="${ar_image_tag%:*}:buildcache"
-        # --provenance=false keeps the pushed artifact a plain manifest, as it was
-        # before buildx; attestations would make it an index and surprise consumers.
-        # $BUILD_ARGS is deliberately unquoted so callers can pass multiple flags.
-        docker buildx build \
-          --tag "$ar_image_tag" \
-          --build-arg version="$docker_tag" \
-          --cache-from "type=registry,ref=$cache" \
-          --cache-to "type=registry,ref=$cache,mode=max,image-manifest=true,oci-mediatypes=true" \
-          --provenance=false \
-          --push \
-          $BUILD_ARGS .
+        # builds on the runner's own Docker daemon, whose layer cache carries over between jobs.
+        # --provenance=false keeps the pushed artifact a plain manifest; attestations would
+        # make it an index and surprise consumers.
+        # $BUILD_ARGS is deliberately unquoted so callers can pass multiple flags; set -f stops globbing.
+        set -f
+        docker build --tag "$ar_image_tag" --build-arg version="$docker_tag" --provenance=false $BUILD_ARGS .
+    - name: Scan the image for fixable critical vulnerabilities
+      shell: bash
+      run: |
+        # Trivy runs from its image, so any runner with Docker works. Pinned by digest: Trivy's
+        # own tags were hijacked in March 2026 (GHSA-69fq-xp46-6x23).
+        # The trivy-cache volume keeps the vulnerability DB between jobs on a self-hosted runner.
+        # --image-src docker scans the local build and never pulls from the registry.
+        # A .trivyignore in the caller's checkout is picked up through -w /src.
+        docker run --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v trivy-cache:/root/.cache/trivy \
+          -v "$PWD:/src:ro" -w /src \
+          aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb \
+          image --image-src docker --severity CRITICAL --ignore-unfixed --exit-code 1 "$ar_image_tag"
+    - name: Push the Image to Google Artifact Registry
+      shell: bash
+      run: docker push "$ar_image_tag"
     - id: deploy
       uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
       with:

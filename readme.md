@@ -33,15 +33,20 @@ the following params are required.
 
 optional:
 
-- DOCKER_BUILD_ARGS: extra flags appended to `docker buildx build` (e.g. `--build-arg env=stage`).
+- DOCKER_BUILD_ARGS: extra flags appended to `docker build` (e.g. `--build-arg env=stage`).
   split on whitespace, so values cannot contain spaces.
 
 ### notes
 
 - the calling workflow **must** run `actions/checkout` itself; this action no longer
   checks out, so anything you build in earlier steps survives into the build context.
-- build layers are cached in artifact registry under the `:buildcache` tag of your image,
-  shared across every pull request in the repo.
+- the image is built on the runner's own docker daemon, so the layer cache carries over
+  between jobs on a self-hosted runner. it is built for `linux/amd64` unless
+  `DOCKER_BUILD_ARGS` sets another `--platform`.
+- before the push, [trivy](https://trivy.dev) scans the local image and fails the preview on
+  critical vulnerabilities that already have a fix. it runs from its pinned image, so the
+  only requirement on the runner is docker. to let a build through while a fix is pending,
+  list the CVE IDs in a `.trivyignore` at the root of the checkout, one per line.
 
 ### example
 
